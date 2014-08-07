@@ -1,0 +1,22 @@
+{
+  "name": "typescript-annotations",
+  "version": "0.0.1",
+  "description": "Fully Functional Annotations for TypeScript",
+  "main": "./src/Annotations.js",
+  "author": {
+    "name": "Danny Marsland",
+    "url": ""
+  },
+  "homepage": "https://github.com/dannymarsland/TypeScriptAnnotations",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dannymarsland/TypeScriptAnnotations.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dannymarsland/TypeScriptAnnotations/issues"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript.api": "^0.7.7"
+  }
+}
