@@ -15,7 +15,9 @@
   "bugs": {
     "url": "https://github.com/dannymarsland/TypeScriptAnnotations/issues"
   },
-  "dependencies": {},
+  "dependencies": {
+    "typescript.api": "^0.7.7"
+  },
   "devDependencies": {
     "typescript.api": "^0.7.7"
   }
