@@ -2,8 +2,8 @@
 ///<reference path="../defs/node.d.ts"/>
 
 import tsapi = require("typescript-api");
-import path = require('path');
 import fs = require('fs');
+
 
 
 export function getApplicationAnnotations(inputFile: string, callback: (applicationAnnotations: ApplicationAnnotations ) => void) {

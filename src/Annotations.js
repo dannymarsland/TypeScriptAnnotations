@@ -1,7 +1,6 @@
 ///<reference path="../defs/typescript.api.d.ts"/>
 ///<reference path="../defs/node.d.ts"/>
 var tsapi = require("typescript-api");
-
 var fs = require('fs');
 
 function getApplicationAnnotations(inputFile, callback) {
@@ -415,4 +414,3 @@ var MemberAnnotation = (function () {
 })();
 exports.MemberAnnotation = MemberAnnotation;
 
-//# sourceMappingURL=Annotations.js.map
