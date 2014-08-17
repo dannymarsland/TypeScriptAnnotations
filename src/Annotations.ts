@@ -16,7 +16,7 @@ export function writeAnnotationsToFile(filePath: string, annotations: AnnotatedC
 
     var classes = {};
     annotations.forEach((classAnnotations: AnnotatedClass) => {
-        var name = classAnnotations.getClass().getClassName();
+        var name = classAnnotations.getClass().getName();
         if (typeof classes[name] == 'undefined') {
             classes[name] = classAnnotations;
         } else {
@@ -56,81 +56,74 @@ export class ApplicationAnnotations {
 export class AnnotationBuilder {
 
     public fromReflectedClass(reflectedClass: tsapi.Class) : AnnotatedClass {
-        var classDescription = this.getClassDescription(reflectedClass);
+        var classType = this.getClassDescription(reflectedClass);
         var variables = reflectedClass.variables;
         var comments = reflectedClass.comments;
         var methods = reflectedClass.methods;
-        var classAnnotations: ClassAnnotation[] = [];
+        var annotatedTypes: AnnotatedType[] = [];
         comments.forEach((comment)=>{
             var annotations = this.parseAnnotations(comment);
-            annotations.forEach((annotation)=>{
-                classAnnotations.push(
-                    new ClassAnnotation(
-                        classDescription, annotation
-                    )
+            annotatedTypes.push(
+                new AnnotatedType(
+                    classType, annotations
                 )
-            });
+            )
         });
 
-        var membersAnnotations: MemberAnnotation[] = [];
         for(var i=0; i< variables.length; i++){
             var variable = variables[i];
             var comments = variable.comments;
+            var annotations: Annotation[] = [];
             for(var j=0; j<comments.length; j++){
-                var annotations = this.parseAnnotations(comments[j]);
-                annotations.forEach((annotation)=>{
-                    var memberVariable = new VariableSpec (
-                        variable.name,
-                        variable.type.name,
-                        variable.type.arrayCount > 0
-                    );
-                    membersAnnotations.push(
-                        new MemberAnnotation(
-                            memberVariable,
-                            annotation
-                        )
-                    )
-                });
+                annotations = [].concat(annotations, this.parseAnnotations(comments[j]));
             }
+            var memberVariable = new VariableType (
+                variable.name,
+                variable.type.name,
+                variable.type.arrayCount > 0
+            );
+            annotatedTypes.push(
+                new AnnotatedType(
+                    memberVariable,
+                    annotations
+                )
+            )
         }
 
-        var methodAnnotations: MethodAnnotation[] = [];
         for(var i=0; i< methods.length; i++){
             var method = methods[i];
             var comments = method.comments;
+            var annotations: Annotation[] = [];
             for(var j=0; j<comments.length; j++){
-                var annotations = this.parseAnnotations(comments[j]);
-                annotations.forEach((annotation)=>{
-                    var returns = method.returns;
-                    var type;
-                    if (returns.scope.length > 0) {
-                        type = returns.scope.join('.') + '.' + returns.name;
-                    } else {
-                        type = returns.name;
-                    }
-                    var spec = new FunctionSpec (
-                        method.name,
-                        new VariableSpec(
-                            returns.name,
-                            type,
-                            returns.arrayCount > 0
-                        )
-                    );
-                    methodAnnotations.push(
-                        new MethodAnnotation(
-                            spec,
-                            annotation
-                        )
-                    )
-                });
+                annotations = [].concat(annotations, this.parseAnnotations(comments[j]));
             }
+            var returns = method.returns;
+            var type;
+            if (returns.scope.length > 0) {
+                type = returns.scope.join('.') + '.' + returns.name;
+            } else {
+                type = returns.name;
+            }
+            var spec = new FunctionType (
+                method.name,
+                new VariableType(
+                    returns.name,
+                    type,
+                    returns.arrayCount > 0
+                )
+            );
+            annotatedTypes.push(
+                new AnnotatedType(
+                    spec,
+                    annotations
+                )
+            );
         }
-
-        return new AnnotatedClass(classDescription, classAnnotations, membersAnnotations, methodAnnotations);
+        return new AnnotatedClass(classType, annotatedTypes);
 
     }
 
-    private getClassDescription(reflectedClass: tsapi.Class): ClassDescription {
+    private getClassDescription(reflectedClass: tsapi.Class): ClassType {
         var parentClass: ClassDescriptionJson;
         if (reflectedClass.extends.length > 0) {
             if(reflectedClass.extends.length != 1){
@@ -139,7 +132,7 @@ export class AnnotationBuilder {
                 parentClass = reflectedClass.extends[0];
             }
         }
-        return new ClassDescription(reflectedClass, parentClass);
+        return new ClassType(reflectedClass, parentClass);
     }
 
     private parseAnnotations(comment: string): Annotation[] {
@@ -175,50 +168,36 @@ export class AnnotationBuilder {
 export class AnnotatedClass {
 
     constructor(
-        private classDescription: ClassDescription,
-        private classAnnotations: ClassAnnotation[],
-        private memberAnnotations: MemberAnnotation[],
-        private methodAnnotations: MethodAnnotation[]
+        private classDescription: ClassType,
+        private annotatedTypes: AnnotatedType[]
         ){
     }
-
-    public getMemberAnnotations(): MemberAnnotation[] {
-        return this.memberAnnotations;
-    }
-
-    public getClassAnnotations(): ClassAnnotation[] {
-        return this.classAnnotations;
-    }
-
     public getClass() {
         return this.classDescription;
     }
 
-    public getAnnotationsForMember(memberName: string): MemberAnnotation[] {
-        return this.memberAnnotations.filter((annotation: MemberAnnotation)=>{
-            return annotation.getName() == memberName;
-        });
-    }
-
-    public getMethodAnnotations() {
-        return this.methodAnnotations;
-    }
-
     public toJSON() {
+        var annotations = {};
+        this.annotatedTypes.forEach((annotatedType: AnnotatedType) => {
+            if( annotatedType.getType() == "constructor") {
+                annotations[annotatedType.getType()] = annotatedType;
+            } else {
+                annotations[annotatedType.getName()] = annotatedType;
+            }
+        });
         return {
-            "classDescription": this.classDescription,
-            "classAnnotations": this.classAnnotations,
-            "memberAnnotations": this.memberAnnotations,
-            "methodAnnotations": this.methodAnnotations
-        }
+            "type": this.classDescription,
+            "annotations": annotations
+        };
     }
 }
 
 
-export class ClassDescription {
+export class ClassType implements Type {
 
     private className: string;
     private parent: string;
+    private type: string = 'constructor';
 
     constructor(classDescription: ClassDescriptionJson, parentDescription: ClassDescriptionJson = null) {
         if (classDescription.scope.length > 0) {
@@ -237,12 +216,24 @@ export class ClassDescription {
         }
     }
 
-    public getClassName() {
+    public getName() {
         return this.className;
     }
 
     public getParent() {
         return this.parent;
+    }
+
+    public getType() {
+        return this.type
+    }
+
+    public toJSON() {
+        return {
+            "name": this.className,
+            "parent": this.parent,
+            "type": this.type
+        }
     }
 }
 
@@ -266,28 +257,13 @@ export class Annotation {
     }
 }
 
-export class ClassAnnotation {
-
-    constructor(private classDescription: ClassDescription, private annotation: Annotation) {}
-
-    public getClass() {
-        return this.classDescription
-    }
-
-    public getAnnotation() {
-        return this.annotation;
-    }
-
-    public toJSON() {
-        return {
-            "annotation": this.annotation
-        }
-    }
-
+export interface Type {
+    getName(): string;
+    getType(): string;
 }
 
 
-export class VariableSpec {
+export class VariableType implements Type {
     constructor(
         private name: string,
         private type: string,
@@ -316,16 +292,22 @@ export class VariableSpec {
     }
 }
 
-export class FunctionSpec {
+export class FunctionType implements Type {
+
+    private type: string = "function";
 
     constructor(
         private name: string,
-        private returns: VariableSpec
+        private returns: VariableType
         ) {
     }
 
     public getName() {
         return this.name;
+    }
+
+    public getType() {
+        return this.type;
     }
 
     public getReturns() {
@@ -335,70 +317,42 @@ export class FunctionSpec {
     public toJSON() {
         return {
             "name": this.name,
+            "type": this.type,
             "returns": this.returns
         }
     }
 }
 
-export class MemberAnnotation {
+export class AnnotatedType {
 
     constructor (
-        private variable: VariableSpec,
-        private annotation: Annotation
+        private type: Type,
+        private annotations: Annotation[]
         ){}
 
     public getName() {
-        return this.variable.getName();
+        return this.type.getName();
     }
 
     public getType() {
-        return this.variable.getType();
+        return this.type.getType();
     }
 
-    public getAnnotation() {
-        return this.annotation;
-    }
-
-    public getIsArray() {
-        return this.variable.getIsArray();
-    }
-
-    public getVariable() {
-        return this.variable;
+    public getAnnotations() {
+        return this.annotations;
     }
 
     public toJSON() {
+        var annotations = {};
+        this.annotations.map((annotation: Annotation)=>{
+            annotations[annotation.getAnnotation()] = annotation;
+        });
         return {
-            "variable": this.variable,
-            "annotation": this.annotation
+            "type": this.type,
+            "annotations": annotations
         }
     }
 }
-
-
-export class MethodAnnotation {
-
-    constructor (
-        private fn: FunctionSpec,
-        private annotation: Annotation
-        ){}
-
-    public getAnnotation() {
-        return this.annotation;
-    }
-
-    public getFunctionSpec() {
-        return this.fn;
-    }
-
-    public toJSON() {
-        return {
-            "method": this.fn,
-            "annotation": this.annotation
-        }
-    }
-}
-
 
 export interface ClassDescriptionJson {
     name: string;
@@ -460,3 +414,5 @@ class Parser {
     }
 
 }
+
+

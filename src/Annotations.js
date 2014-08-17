@@ -16,7 +16,7 @@ function writeAnnotationsToFile(filePath, annotations, prettify) {
     if (typeof prettify === "undefined") { prettify = false; }
     var classes = {};
     annotations.forEach(function (classAnnotations) {
-        var name = classAnnotations.getClass().getClassName();
+        var name = classAnnotations.getClass().getName();
         if (typeof classes[name] == 'undefined') {
             classes[name] = classAnnotations;
         } else {
@@ -59,52 +59,45 @@ var AnnotationBuilder = (function () {
     }
     AnnotationBuilder.prototype.fromReflectedClass = function (reflectedClass) {
         var _this = this;
-        var classDescription = this.getClassDescription(reflectedClass);
+        var classType = this.getClassDescription(reflectedClass);
         var variables = reflectedClass.variables;
         var comments = reflectedClass.comments;
         var methods = reflectedClass.methods;
-        var classAnnotations = [];
+        var annotatedTypes = [];
         comments.forEach(function (comment) {
             var annotations = _this.parseAnnotations(comment);
-            annotations.forEach(function (annotation) {
-                classAnnotations.push(new ClassAnnotation(classDescription, annotation));
-            });
+            annotatedTypes.push(new AnnotatedType(classType, annotations));
         });
 
-        var membersAnnotations = [];
         for (var i = 0; i < variables.length; i++) {
             var variable = variables[i];
             var comments = variable.comments;
+            var annotations = [];
             for (var j = 0; j < comments.length; j++) {
-                var annotations = this.parseAnnotations(comments[j]);
-                annotations.forEach(function (annotation) {
-                    var memberVariable = new VariableSpec(variable.name, variable.type.name, variable.type.arrayCount > 0);
-                    membersAnnotations.push(new MemberAnnotation(memberVariable, annotation));
-                });
+                annotations = [].concat(annotations, this.parseAnnotations(comments[j]));
             }
+            var memberVariable = new VariableType(variable.name, variable.type.name, variable.type.arrayCount > 0);
+            annotatedTypes.push(new AnnotatedType(memberVariable, annotations));
         }
 
-        var methodAnnotations = [];
         for (var i = 0; i < methods.length; i++) {
             var method = methods[i];
             var comments = method.comments;
+            var annotations = [];
             for (var j = 0; j < comments.length; j++) {
-                var annotations = this.parseAnnotations(comments[j]);
-                annotations.forEach(function (annotation) {
-                    var returns = method.returns;
-                    var type;
-                    if (returns.scope.length > 0) {
-                        type = returns.scope.join('.') + '.' + returns.name;
-                    } else {
-                        type = returns.name;
-                    }
-                    var spec = new FunctionSpec(method.name, new VariableSpec(returns.name, type, returns.arrayCount > 0));
-                    methodAnnotations.push(new MethodAnnotation(spec, annotation));
-                });
+                annotations = [].concat(annotations, this.parseAnnotations(comments[j]));
             }
+            var returns = method.returns;
+            var type;
+            if (returns.scope.length > 0) {
+                type = returns.scope.join('.') + '.' + returns.name;
+            } else {
+                type = returns.name;
+            }
+            var spec = new FunctionType(method.name, new VariableType(returns.name, type, returns.arrayCount > 0));
+            annotatedTypes.push(new AnnotatedType(spec, annotations));
         }
-
-        return new AnnotatedClass(classDescription, classAnnotations, membersAnnotations, methodAnnotations);
+        return new AnnotatedClass(classType, annotatedTypes);
     };
 
     AnnotationBuilder.prototype.getClassDescription = function (reflectedClass) {
@@ -116,7 +109,7 @@ var AnnotationBuilder = (function () {
                 parentClass = reflectedClass.extends[0];
             }
         }
-        return new ClassDescription(reflectedClass, parentClass);
+        return new ClassType(reflectedClass, parentClass);
     };
 
     AnnotationBuilder.prototype.parseAnnotations = function (comment) {
@@ -152,49 +145,36 @@ var AnnotationBuilder = (function () {
 exports.AnnotationBuilder = AnnotationBuilder;
 
 var AnnotatedClass = (function () {
-    function AnnotatedClass(classDescription, classAnnotations, memberAnnotations, methodAnnotations) {
+    function AnnotatedClass(classDescription, annotatedTypes) {
         this.classDescription = classDescription;
-        this.classAnnotations = classAnnotations;
-        this.memberAnnotations = memberAnnotations;
-        this.methodAnnotations = methodAnnotations;
+        this.annotatedTypes = annotatedTypes;
     }
-    AnnotatedClass.prototype.getMemberAnnotations = function () {
-        return this.memberAnnotations;
-    };
-
-    AnnotatedClass.prototype.getClassAnnotations = function () {
-        return this.classAnnotations;
-    };
-
     AnnotatedClass.prototype.getClass = function () {
         return this.classDescription;
     };
 
-    AnnotatedClass.prototype.getAnnotationsForMember = function (memberName) {
-        return this.memberAnnotations.filter(function (annotation) {
-            return annotation.getName() == memberName;
-        });
-    };
-
-    AnnotatedClass.prototype.getMethodAnnotations = function () {
-        return this.methodAnnotations;
-    };
-
     AnnotatedClass.prototype.toJSON = function () {
+        var annotations = {};
+        this.annotatedTypes.forEach(function (annotatedType) {
+            if (annotatedType.getType() == "constructor") {
+                annotations[annotatedType.getType()] = annotatedType;
+            } else {
+                annotations[annotatedType.getName()] = annotatedType;
+            }
+        });
         return {
-            "classDescription": this.classDescription,
-            "classAnnotations": this.classAnnotations,
-            "memberAnnotations": this.memberAnnotations,
-            "methodAnnotations": this.methodAnnotations
+            "type": this.classDescription,
+            "annotations": annotations
         };
     };
     return AnnotatedClass;
 })();
 exports.AnnotatedClass = AnnotatedClass;
 
-var ClassDescription = (function () {
-    function ClassDescription(classDescription, parentDescription) {
+var ClassType = (function () {
+    function ClassType(classDescription, parentDescription) {
         if (typeof parentDescription === "undefined") { parentDescription = null; }
+        this.type = 'constructor';
         if (classDescription.scope.length > 0) {
             this.className = classDescription.scope.join('.') + '.' + classDescription.name;
         } else {
@@ -210,16 +190,28 @@ var ClassDescription = (function () {
             this.parent = null;
         }
     }
-    ClassDescription.prototype.getClassName = function () {
+    ClassType.prototype.getName = function () {
         return this.className;
     };
 
-    ClassDescription.prototype.getParent = function () {
+    ClassType.prototype.getParent = function () {
         return this.parent;
     };
-    return ClassDescription;
+
+    ClassType.prototype.getType = function () {
+        return this.type;
+    };
+
+    ClassType.prototype.toJSON = function () {
+        return {
+            "name": this.className,
+            "parent": this.parent,
+            "type": this.type
+        };
+    };
+    return ClassType;
 })();
-exports.ClassDescription = ClassDescription;
+exports.ClassType = ClassType;
 
 var Annotation = (function () {
     function Annotation(annotation, params) {
@@ -245,137 +237,94 @@ var Annotation = (function () {
 })();
 exports.Annotation = Annotation;
 
-var ClassAnnotation = (function () {
-    function ClassAnnotation(classDescription, annotation) {
-        this.classDescription = classDescription;
-        this.annotation = annotation;
-    }
-    ClassAnnotation.prototype.getClass = function () {
-        return this.classDescription;
-    };
-
-    ClassAnnotation.prototype.getAnnotation = function () {
-        return this.annotation;
-    };
-
-    ClassAnnotation.prototype.toJSON = function () {
-        return {
-            "annotation": this.annotation
-        };
-    };
-    return ClassAnnotation;
-})();
-exports.ClassAnnotation = ClassAnnotation;
-
-var VariableSpec = (function () {
-    function VariableSpec(name, type, isArray) {
+var VariableType = (function () {
+    function VariableType(name, type, isArray) {
         this.name = name;
         this.type = type;
         this.isArray = isArray;
     }
-    VariableSpec.prototype.getName = function () {
+    VariableType.prototype.getName = function () {
         return this.name;
     };
 
-    VariableSpec.prototype.getType = function () {
+    VariableType.prototype.getType = function () {
         return this.type;
     };
 
-    VariableSpec.prototype.getIsArray = function () {
+    VariableType.prototype.getIsArray = function () {
         return this.isArray;
     };
 
-    VariableSpec.prototype.toJSON = function () {
+    VariableType.prototype.toJSON = function () {
         return {
             "name": this.name,
             "type": this.type,
             "isArray": this.isArray
         };
     };
-    return VariableSpec;
+    return VariableType;
 })();
-exports.VariableSpec = VariableSpec;
+exports.VariableType = VariableType;
 
-var FunctionSpec = (function () {
-    function FunctionSpec(name, returns) {
+var FunctionType = (function () {
+    function FunctionType(name, returns) {
         this.name = name;
         this.returns = returns;
+        this.type = "function";
     }
-    FunctionSpec.prototype.getName = function () {
+    FunctionType.prototype.getName = function () {
         return this.name;
     };
 
-    FunctionSpec.prototype.getReturns = function () {
+    FunctionType.prototype.getType = function () {
+        return this.type;
+    };
+
+    FunctionType.prototype.getReturns = function () {
         return this.returns;
     };
 
-    FunctionSpec.prototype.toJSON = function () {
+    FunctionType.prototype.toJSON = function () {
         return {
             "name": this.name,
+            "type": this.type,
             "returns": this.returns
         };
     };
-    return FunctionSpec;
+    return FunctionType;
 })();
-exports.FunctionSpec = FunctionSpec;
+exports.FunctionType = FunctionType;
 
-var MemberAnnotation = (function () {
-    function MemberAnnotation(variable, annotation) {
-        this.variable = variable;
-        this.annotation = annotation;
+var AnnotatedType = (function () {
+    function AnnotatedType(type, annotations) {
+        this.type = type;
+        this.annotations = annotations;
     }
-    MemberAnnotation.prototype.getName = function () {
-        return this.variable.getName();
+    AnnotatedType.prototype.getName = function () {
+        return this.type.getName();
     };
 
-    MemberAnnotation.prototype.getType = function () {
-        return this.variable.getType();
+    AnnotatedType.prototype.getType = function () {
+        return this.type.getType();
     };
 
-    MemberAnnotation.prototype.getAnnotation = function () {
-        return this.annotation;
+    AnnotatedType.prototype.getAnnotations = function () {
+        return this.annotations;
     };
 
-    MemberAnnotation.prototype.getIsArray = function () {
-        return this.variable.getIsArray();
-    };
-
-    MemberAnnotation.prototype.getVariable = function () {
-        return this.variable;
-    };
-
-    MemberAnnotation.prototype.toJSON = function () {
+    AnnotatedType.prototype.toJSON = function () {
+        var annotations = {};
+        this.annotations.map(function (annotation) {
+            annotations[annotation.getAnnotation()] = annotation;
+        });
         return {
-            "variable": this.variable,
-            "annotation": this.annotation
+            "type": this.type,
+            "annotations": annotations
         };
     };
-    return MemberAnnotation;
+    return AnnotatedType;
 })();
-exports.MemberAnnotation = MemberAnnotation;
-
-var MethodAnnotation = (function () {
-    function MethodAnnotation(fn, annotation) {
-        this.fn = fn;
-        this.annotation = annotation;
-    }
-    MethodAnnotation.prototype.getAnnotation = function () {
-        return this.annotation;
-    };
-
-    MethodAnnotation.prototype.getFunctionSpec = function () {
-        return this.fn;
-    };
-
-    MethodAnnotation.prototype.toJSON = function () {
-        return {
-            "method": this.fn,
-            "annotation": this.annotation
-        };
-    };
-    return MethodAnnotation;
-})();
-exports.MethodAnnotation = MethodAnnotation;
+exports.AnnotatedType = AnnotatedType;
 
 var Parser = (function () {
     function Parser() {
