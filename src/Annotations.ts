@@ -4,8 +4,6 @@
 import tsapi = require("typescript-api");
 import fs = require('fs');
 
-
-
 export function getApplicationAnnotations(inputFile: string, callback: (applicationAnnotations: ApplicationAnnotations ) => void) {
     var parser = new Parser();
     parser.parse(inputFile, (classAnnotations : AnnotatedClass[], reflectedClasses: tsapi.Class[]) => {
@@ -43,7 +41,6 @@ export function writeAnnotationsToFile(filePath: string, annotations: AnnotatedC
 export class ApplicationAnnotations {
 
     constructor(private inputFile: string, private classAnnotations: AnnotatedClass[]) {
-
     }
 
     public getInputFile() {
@@ -56,68 +53,13 @@ export class ApplicationAnnotations {
 
 }
 
-export class Parser {
-
-    public parse(inputFilePath: string, callback: (classAnnotations : AnnotatedClass[], reflectedClasses: tsapi.Class[]) => void) {
-        if (fs.existsSync(inputFilePath)) {
-            tsapi.resolve([inputFilePath], (resolved : tsapi.SourceUnit[]) => {
-                if(tsapi.check(resolved)){
-                    tsapi.compile(resolved, (compiled:tsapi.CompiledUnit[]) => {
-                        var reflectedClasses: tsapi.Class[] = [];
-                        compiled.forEach((unit) => {
-                            this.getReflectedClassesFromScript(unit.script, reflectedClasses);
-                        });
-                        var annotations: AnnotatedClass[] = this.getAnnotationsFromReflectedClasses(reflectedClasses);
-                        console.log('Number of classes:' + annotations.length);
-                        callback(annotations.reverse(), reflectedClasses);
-                    })
-                } else {
-                    throw new Error('Invalid code');
-                }
-            });
-        } else {
-            throw new Error('Input file does not exist ' + inputFilePath);
-        }
-    }
-
-    private getReflectedClassesFromScript(script : tsapi.Script, classes: tsapi.Class[]) {
-        script.classes.forEach((tsClass)=>{
-                classes.push(tsClass);
-            }
-        );
-        script.modules.forEach((tsModule)=>{
-            this.getReflectedClassesFromModule(tsModule, classes);
-        });
-
-    }
-
-    private getReflectedClassesFromModule(tsModule : tsapi.Module, classes: tsapi.Class[]) {
-        tsModule.classes.forEach((tsClass)=>{
-               classes.push(tsClass);
-            }
-        );
-        tsModule.modules.forEach((subModule)=>{
-            this.getReflectedClassesFromModule(subModule,classes);
-        })
-    }
-
-    private getAnnotationsFromReflectedClasses(reflectedClasses: tsapi.Class[]): AnnotatedClass[] {
-        var builder = new AnnotationBuilder();
-        var annotatedClasses: AnnotatedClass[] = [];
-        reflectedClasses.forEach((reflectedClass)=>{
-            annotatedClasses.push(builder.fromReflectedClass(reflectedClass));
-        });
-        return annotatedClasses;
-    }
-
-}
-
 export class AnnotationBuilder {
 
     public fromReflectedClass(reflectedClass: tsapi.Class) : AnnotatedClass {
         var classDescription = this.getClassDescription(reflectedClass);
         var variables = reflectedClass.variables;
         var comments = reflectedClass.comments;
+        var methods = reflectedClass.methods;
         var classAnnotations: ClassAnnotation[] = [];
         comments.forEach((comment)=>{
             var annotations = this.parseAnnotations(comment);
@@ -137,10 +79,14 @@ export class AnnotationBuilder {
             for(var j=0; j<comments.length; j++){
                 var annotations = this.parseAnnotations(comments[j]);
                 annotations.forEach((annotation)=>{
+                    var memberVariable = new VariableSpec (
+                        variable.name,
+                        variable.type.name,
+                        variable.type.arrayCount > 0
+                    );
                     membersAnnotations.push(
                         new MemberAnnotation(
-                            variable.name,
-                            variable.type.name,
+                            memberVariable,
                             annotation
                         )
                     )
@@ -148,7 +94,39 @@ export class AnnotationBuilder {
             }
         }
 
-        return new AnnotatedClass(classDescription, classAnnotations, membersAnnotations);
+        var methodAnnotations: MethodAnnotation[] = [];
+        for(var i=0; i< methods.length; i++){
+            var method = methods[i];
+            var comments = method.comments;
+            for(var j=0; j<comments.length; j++){
+                var annotations = this.parseAnnotations(comments[j]);
+                annotations.forEach((annotation)=>{
+                    var returns = method.returns;
+                    var type;
+                    if (returns.scope.length > 0) {
+                        type = returns.scope.join('.') + '.' + returns.name;
+                    } else {
+                        type = returns.name;
+                    }
+                    var spec = new FunctionSpec (
+                        method.name,
+                        new VariableSpec(
+                            returns.name,
+                            type,
+                            returns.arrayCount > 0
+                        )
+                    );
+                    methodAnnotations.push(
+                        new MethodAnnotation(
+                            spec,
+                            annotation
+                        )
+                    )
+                });
+            }
+        }
+
+        return new AnnotatedClass(classDescription, classAnnotations, membersAnnotations, methodAnnotations);
 
     }
 
@@ -194,134 +172,14 @@ export class AnnotationBuilder {
     }
 }
 
-
-
-export interface ClassParentDescriptionDescription {
-    className: string;
-    scope: string[];
-}
-
-export interface ClassDescriptionDescription {
-    className: string;
-    parent: ClassParentDescriptionDescription
-    scope: string[];
-}
-
-export interface ClassAnnotationsDescription {
-    classDescription: ClassDescriptionDescription;
-    annotations: ClassAnnotationDescription[];
-    memberAnnotations: MemberAnnotationDescription[];
-}
-
-export interface ClassAnnotationDescription {
-    //classDescription: ClassDescription;
-    annotation: AnnotationDescription;
-}
-
-export interface AnnotationDescription {
-    annotation: string;
-    params: {};
-}
-
-export interface MemberAnnotationDescription {
-    name: string;
-    type: string;
-    annotation: AnnotationDescription
-}
-
-
-//class AnnotationReader {
-//
-//    public static readClassName(className: string): AnnotatedClass {
-//        // @todo deal with namespacing
-//        return this.readClass(window[className]);
-//    }
-//
-//    public static readInstance(object: any) {
-//        return this.readClass(object['constructor']);
-//    }
-//
-//    public static readClass(classConstructor: Function): AnnotatedClass {
-//        if(typeof classConstructor['__annotations'] !== "undefined") {
-//            var annotationsDescription: ClassAnnotationsDescription = classConstructor['__annotations'];
-//            var classDescriptionJSON = annotationsDescription.classDescription;
-//            var className = classDescriptionJSON.className;
-//            var scope = classDescriptionJSON.scope;
-//            var parent = classDescriptionJSON.parent ? new ParentClassDescription(classDescriptionJSON.parent.className, classDescriptionJSON.parent.scope) : null;
-//            var classDescription = new ClassDescription(classDescriptionJSON, scope, parent);
-//            var classAnnotations: ClassAnnotation[] = annotationsDescription.annotations.map((description: ClassAnnotationDescription) => {
-//                var annotation = new Annotation(description.annotation.annotation, description.annotation.params);
-//                return new ClassAnnotation(classDescription, annotation);
-//            });
-//            var memberAnnotations: MemberAnnotation[] = annotationsDescription.memberAnnotations.map((description)=>{
-//                var annotation = new Annotation(description.annotation, description.params);
-//                return new MemberAnnotation(description.name, description.type, annotation);
-//            });
-//
-//            if(parent) {
-//
-//            }
-//            return new AnnotatedClass(classDescription, classAnnotations, memberAnnotations);
-//        } else {
-//            return null;
-//        }
-//    }
-//
-//
-//    private getClassDescriptionFromName(className: string, scope: string[] = null): ClassDescription {
-//        var classConstructor = this.getClassConstructorFromName(className, scope);
-//        if(typeof classConstructor['__annotations'] !== "undefined") {
-//            var annotationsDescription: ClassAnnotationsDescription = classConstructor['__annotations'];
-//            var classDescriptionJSON = annotationsDescription.classDescription;
-//            var className = classDescriptionJSON.className;
-//            var scope = classDescriptionJSON.scope;
-//            var parent = classDescriptionJSON.parent ? new ParentClassDescription(classDescriptionJSON.parent.className, classDescriptionJSON.parent.scope) : null;
-//            return new ClassDescription(className, scope, parent);
-//
-//        } else {
-//            return new ClassDescription(className, scope);
-//        }
-//    }
-//
-//    private getAnnotationsForClass(classDescription: ClassDescription) {
-//        var classConstructor = this.getClassFromDescription(classDescription);
-//
-//    }
-//
-//    private getClassFromDescription(classDescription: ClassDescription): Function {
-//        var name = classDescription.getClassName();
-//        var scope = classDescription.getScope();
-//        return this.getClassConstructorFromName(name, scope);
-//    }
-//
-//    private getFullClassName(name: string, scope: string[] = []) {
-//        return new ClassDescription(name, scope, null).getFullClassName();
-//    }
-//
-//    private getClassConstructorFromName(name: string, scope: string[] = []): Function{
-//        var currentScope = window;
-//
-//        scope.forEach((namespace: string)=>{
-//            // cater for function namespacing ?
-//            if(typeof currentScope[namespace] == "object") {
-//                currentScope = currentScope[namespace];
-//            } else {
-//                throw new Error('Namespace does not exist:' + namespace + ' (' + this.getFullClassName(name, scope) + ')');
-//            }
-//        });
-//
-//        if(typeof currentScope[name] == "function") {
-//            return currentScope[name];
-//        } else {
-//            throw new Error('Class does not exist: ' + this.getFullClassName(name, scope))
-//        }
-//    }
-//}
-
-
 export class AnnotatedClass {
 
-    constructor(private classDescription: ClassDescription, private classAnnotations: ClassAnnotation[], private memberAnnotations: MemberAnnotation[]){
+    constructor(
+        private classDescription: ClassDescription,
+        private classAnnotations: ClassAnnotation[],
+        private memberAnnotations: MemberAnnotation[],
+        private methodAnnotations: MethodAnnotation[]
+        ){
     }
 
     public getMemberAnnotations(): MemberAnnotation[] {
@@ -342,11 +200,16 @@ export class AnnotatedClass {
         });
     }
 
+    public getMethodAnnotations() {
+        return this.methodAnnotations;
+    }
+
     public toJSON() {
         return {
             "classDescription": this.classDescription,
             "classAnnotations": this.classAnnotations,
-            "memberAnnotations": this.memberAnnotations
+            "memberAnnotations": this.memberAnnotations,
+            "methodAnnotations": this.methodAnnotations
         }
     }
 }
@@ -395,7 +258,7 @@ export class Annotation {
         return this.params;
     }
 
-    public toJSON(): AnnotationDescription {
+    public toJSON() {
         return {
             "annotation": this.annotation,
             "params": this.params
@@ -415,22 +278,22 @@ export class ClassAnnotation {
         return this.annotation;
     }
 
-    public toJSON(): ClassAnnotationDescription {
+    public toJSON() {
         return {
-          //  "classDescription": this.classDescription,
-            "annotation": this.annotation.toJSON()
+            "annotation": this.annotation
         }
     }
 
 }
 
-export class MemberAnnotation {
 
-    constructor (
+export class VariableSpec {
+    constructor(
         private name: string,
         private type: string,
-        private annotation: Annotation
-        ){}
+        private isArray: boolean
+        ) {
+    }
 
     public getName() {
         return this.name;
@@ -440,18 +303,100 @@ export class MemberAnnotation {
         return this.type;
     }
 
+    public getIsArray() {
+        return this.isArray;
+    }
+
+    public toJSON() {
+        return {
+            "name": this.name,
+            "type": this.type,
+            "isArray": this.isArray
+        }
+    }
+}
+
+export class FunctionSpec {
+
+    constructor(
+        private name: string,
+        private returns: VariableSpec
+        ) {
+    }
+
+    public getName() {
+        return this.name;
+    }
+
+    public getReturns() {
+        return this.returns;
+    }
+
+    public toJSON() {
+        return {
+            "name": this.name,
+            "returns": this.returns
+        }
+    }
+}
+
+export class MemberAnnotation {
+
+    constructor (
+        private variable: VariableSpec,
+        private annotation: Annotation
+        ){}
+
+    public getName() {
+        return this.variable.getName();
+    }
+
+    public getType() {
+        return this.variable.getType();
+    }
+
     public getAnnotation() {
         return this.annotation;
     }
 
-    public toJSON() : MemberAnnotationDescription {
-        return {
-            "name": this.name,
-            "type": this.type,
-            "annotation": this.annotation.toJSON()
-        }
+    public getIsArray() {
+        return this.variable.getIsArray();
     }
 
+    public getVariable() {
+        return this.variable;
+    }
+
+    public toJSON() {
+        return {
+            "variable": this.variable,
+            "annotation": this.annotation
+        }
+    }
+}
+
+
+export class MethodAnnotation {
+
+    constructor (
+        private fn: FunctionSpec,
+        private annotation: Annotation
+        ){}
+
+    public getAnnotation() {
+        return this.annotation;
+    }
+
+    public getFunctionSpec() {
+        return this.fn;
+    }
+
+    public toJSON() {
+        return {
+            "method": this.fn,
+            "annotation": this.annotation
+        }
+    }
 }
 
 
@@ -460,3 +405,58 @@ export interface ClassDescriptionJson {
     scope: string[];
 }
 
+class Parser {
+
+    public parse(inputFilePath: string, callback: (classAnnotations : AnnotatedClass[], reflectedClasses: tsapi.Class[]) => void) {
+        if (fs.existsSync(inputFilePath)) {
+            tsapi.resolve([inputFilePath], (resolved : tsapi.SourceUnit[]) => {
+                if(true || tsapi.check(resolved)){
+                    tsapi.compile(resolved, (compiled:tsapi.CompiledUnit[]) => {
+                        var reflectedClasses: tsapi.Class[] = [];
+                        compiled.forEach((unit) => {
+                            this.getReflectedClassesFromScript(unit.script, reflectedClasses);
+                        });
+                        var annotations: AnnotatedClass[] = this.getAnnotationsFromReflectedClasses(reflectedClasses);
+                        callback(annotations.reverse(), reflectedClasses);
+                    })
+                } else {
+                    //throw new Error('Invalid code');
+                    console.error('Invalid code');
+                }
+            });
+        } else {
+            throw new Error('Input file does not exist ' + inputFilePath);
+        }
+    }
+
+    private getReflectedClassesFromScript(script : tsapi.Script, classes: tsapi.Class[]) {
+        script.classes.forEach((tsClass)=>{
+                classes.push(tsClass);
+            }
+        );
+        script.modules.forEach((tsModule)=>{
+            this.getReflectedClassesFromModule(tsModule, classes);
+        });
+
+    }
+
+    private getReflectedClassesFromModule(tsModule : tsapi.Module, classes: tsapi.Class[]) {
+        tsModule.classes.forEach((tsClass)=>{
+                classes.push(tsClass);
+            }
+        );
+        tsModule.modules.forEach((subModule)=>{
+            this.getReflectedClassesFromModule(subModule,classes);
+        })
+    }
+
+    private getAnnotationsFromReflectedClasses(reflectedClasses: tsapi.Class[]): AnnotatedClass[] {
+        var builder = new AnnotationBuilder();
+        var annotatedClasses: AnnotatedClass[] = [];
+        reflectedClasses.forEach((reflectedClass)=>{
+            annotatedClasses.push(builder.fromReflectedClass(reflectedClass));
+        });
+        return annotatedClasses;
+    }
+
+}
