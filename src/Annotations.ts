@@ -167,27 +167,40 @@ export class AnnotationBuilder {
 
 export class AnnotatedClass {
 
+    private annotations: {[s: string] : AnnotatedType};
     constructor(
         private classDescription: ClassType,
-        private annotatedTypes: AnnotatedType[]
+        annotatedTypes: AnnotatedType[]
         ){
+        this.annotations = {};
+        annotatedTypes.forEach((annotatedType: AnnotatedType) => {
+            if( annotatedType.getType() == "constructor") {
+                this.annotations[annotatedType.getType()] = annotatedType;
+            } else {
+                this.annotations[annotatedType.getName()] = annotatedType;
+            }
+        });
     }
     public getClass() {
         return this.classDescription;
     }
 
-    public toJSON() {
-        var annotations = {};
-        this.annotatedTypes.forEach((annotatedType: AnnotatedType) => {
-            if( annotatedType.getType() == "constructor") {
-                annotations[annotatedType.getType()] = annotatedType;
-            } else {
-                annotations[annotatedType.getName()] = annotatedType;
+    public addAnnotatedType(annotatedType: AnnotatedType) {
+        var name = annotatedType.getName();
+        if (this.annotations[name]) {
+            var annotations = annotatedType.getAnnotations();
+            for (var annotationName in annotations) {
+                this.annotations[name].addAnnotation(annotations[annotationName]);
             }
-        });
+        } else {
+            this.annotations[name] = annotatedType;
+        }
+    }
+
+    public toJSON() {
         return {
             "type": this.classDescription,
-            "annotations": annotations
+            "annotations": this.annotations
         };
     }
 }
@@ -325,10 +338,16 @@ export class FunctionType implements Type {
 
 export class AnnotatedType {
 
+    private annotations: {[s: string]: Annotation};
     constructor (
         private type: Type,
-        private annotations: Annotation[]
-        ){}
+        annotations: Annotation[]
+        ){
+        this.annotations = {};
+        annotations.map((annotation: Annotation)=>{
+            this.annotations[annotation.getAnnotation()] = annotation;
+        });
+    }
 
     public getName() {
         return this.type.getName();
@@ -342,14 +361,16 @@ export class AnnotatedType {
         return this.annotations;
     }
 
+    public addAnnotation(annotation: Annotation) {
+        if (!this.annotations[annotation.getAnnotation()]) {
+            this.annotations[annotation.getAnnotation()] = annotation;
+        }
+    }
+
     public toJSON() {
-        var annotations = {};
-        this.annotations.map((annotation: Annotation)=>{
-            annotations[annotation.getAnnotation()] = annotation;
-        });
         return {
             "type": this.type,
-            "annotations": annotations
+            "annotations": this.annotations
         }
     }
 }
