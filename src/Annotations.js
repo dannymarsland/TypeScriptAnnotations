@@ -1,5 +1,3 @@
-///<reference path="../defs/typescript.api.d.ts"/>
-///<reference path="../defs/node.d.ts"/>
 var tsapi = require("typescript-api");
 var fs = require('fs');
 
@@ -14,17 +12,20 @@ exports.getApplicationAnnotations = getApplicationAnnotations;
 
 function writeAnnotationsToFile(filePath, annotations, prettify) {
     if (typeof prettify === "undefined") { prettify = false; }
+    var dataString = '';
     var classes = {};
     annotations.forEach(function (classAnnotations) {
         var name = classAnnotations.getClass().getName();
         if (typeof classes[name] == 'undefined') {
             classes[name] = classAnnotations;
+            dataString += name + '.__annotationJson = ' + JSON.stringify(classAnnotations, undefined, prettify ? 2 : undefined) + ';\n';
+            dataString += name + '.__classDefinitionJson = ' + JSON.stringify(classAnnotations.getClass(), undefined, prettify ? 2 : undefined) + ';\n';
         } else {
             throw new Error('Duplicate class definition: ' + name);
         }
     });
 
-    var dataString = '(function (context) {\n  ';
+    dataString += '(function (context) {\n  ';
     dataString += 'var data = ';
     dataString += JSON.stringify(classes, undefined, prettify ? 2 : undefined) + ';\n  ';
     dataString += 'if (typeof module === "object" && typeof module.exports !== "undefined") {\n  ';
@@ -146,25 +147,37 @@ exports.AnnotationBuilder = AnnotationBuilder;
 
 var AnnotatedClass = (function () {
     function AnnotatedClass(classDescription, annotatedTypes) {
+        var _this = this;
         this.classDescription = classDescription;
-        this.annotatedTypes = annotatedTypes;
+        this.annotations = {};
+        annotatedTypes.forEach(function (annotatedType) {
+            if (annotatedType.getType() == "constructor") {
+                _this.annotations[annotatedType.getType()] = annotatedType;
+            } else {
+                _this.annotations[annotatedType.getName()] = annotatedType;
+            }
+        });
     }
     AnnotatedClass.prototype.getClass = function () {
         return this.classDescription;
     };
 
-    AnnotatedClass.prototype.toJSON = function () {
-        var annotations = {};
-        this.annotatedTypes.forEach(function (annotatedType) {
-            if (annotatedType.getType() == "constructor") {
-                annotations[annotatedType.getType()] = annotatedType;
-            } else {
-                annotations[annotatedType.getName()] = annotatedType;
+    AnnotatedClass.prototype.addAnnotatedType = function (annotatedType) {
+        var name = annotatedType.getName();
+        if (this.annotations[name]) {
+            var annotations = annotatedType.getAnnotations();
+            for (var annotationName in annotations) {
+                this.annotations[name].addAnnotation(annotations[annotationName]);
             }
-        });
+        } else {
+            this.annotations[name] = annotatedType;
+        }
+    };
+
+    AnnotatedClass.prototype.toJSON = function () {
         return {
             "type": this.classDescription,
-            "annotations": annotations
+            "annotations": this.annotations
         };
     };
     return AnnotatedClass;
@@ -297,8 +310,12 @@ exports.FunctionType = FunctionType;
 
 var AnnotatedType = (function () {
     function AnnotatedType(type, annotations) {
+        var _this = this;
         this.type = type;
-        this.annotations = annotations;
+        this.annotations = {};
+        annotations.map(function (annotation) {
+            _this.annotations[annotation.getAnnotation()] = annotation;
+        });
     }
     AnnotatedType.prototype.getName = function () {
         return this.type.getName();
@@ -312,14 +329,16 @@ var AnnotatedType = (function () {
         return this.annotations;
     };
 
+    AnnotatedType.prototype.addAnnotation = function (annotation) {
+        if (!this.annotations[annotation.getAnnotation()]) {
+            this.annotations[annotation.getAnnotation()] = annotation;
+        }
+    };
+
     AnnotatedType.prototype.toJSON = function () {
-        var annotations = {};
-        this.annotations.map(function (annotation) {
-            annotations[annotation.getAnnotation()] = annotation;
-        });
         return {
             "type": this.type,
-            "annotations": annotations
+            "annotations": this.annotations
         };
     };
     return AnnotatedType;
@@ -343,7 +362,6 @@ var Parser = (function () {
                         callback(annotations.reverse(), reflectedClasses);
                     });
                 } else {
-                    //throw new Error('Invalid code');
                     console.error('Invalid code');
                 }
             });
@@ -382,5 +400,4 @@ var Parser = (function () {
     };
     return Parser;
 })();
-
 //# sourceMappingURL=Annotations.js.map

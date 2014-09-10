@@ -13,7 +13,7 @@ module Module1 {
          * */
         public exampleMember55: boolean;
 
-        /** @fuckingmethod */
+        /** @amethod */
         public myMethod(): string {
             return '12345';
         }

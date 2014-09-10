@@ -14,17 +14,20 @@ export function getApplicationAnnotations(inputFile: string, callback: (applicat
 
 export function writeAnnotationsToFile(filePath: string, annotations: AnnotatedClass[], prettify: boolean = false) {
 
+    var dataString = '';
     var classes = {};
     annotations.forEach((classAnnotations: AnnotatedClass) => {
         var name = classAnnotations.getClass().getName();
         if (typeof classes[name] == 'undefined') {
             classes[name] = classAnnotations;
+            dataString += name + '.__annotationJson = ' + JSON.stringify(classAnnotations, undefined, prettify ? 2 : undefined) + ';\n';
+            dataString += name + '.__classDefinitionJson = ' + JSON.stringify(classAnnotations.getClass(), undefined, prettify ? 2 : undefined) + ';\n';
         } else {
             throw new Error('Duplicate class definition: ' + name);
         }
     });
 
-    var dataString = '(function (context) {\n  ';
+    dataString += '(function (context) {\n  ';
     dataString += 'var data = ';
     dataString += JSON.stringify(classes, undefined, prettify ? 2 : undefined) + ';\n  ';
     dataString += 'if (typeof module === "object" && typeof module.exports !== "undefined") {\n  ';
