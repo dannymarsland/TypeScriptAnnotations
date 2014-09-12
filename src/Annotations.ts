@@ -20,8 +20,8 @@ export function writeAnnotationsToFile(filePath: string, annotations: AnnotatedC
         var name = classAnnotations.getClass().getName();
         if (typeof classes[name] == 'undefined') {
             classes[name] = classAnnotations;
-            dataString += name + '.__annotationJson = ' + JSON.stringify(classAnnotations, undefined, prettify ? 2 : undefined) + ';\n';
-            dataString += name + '.__classDefinitionJson = ' + JSON.stringify(classAnnotations.getClass(), undefined, prettify ? 2 : undefined) + ';\n';
+            //dataString += name + '.__annotationJson = ' + JSON.stringify(classAnnotations, undefined, prettify ? 2 : undefined) + ';\n';
+            //dataString += name + '.__classDefinitionJson = ' + JSON.stringify(classAnnotations.getClass(), undefined, prettify ? 2 : undefined) + ';\n';
         } else {
             throw new Error('Duplicate class definition: ' + name);
         }
@@ -415,7 +415,6 @@ class Parser {
         script.modules.forEach((tsModule)=>{
             this.getReflectedClassesFromModule(tsModule, classes);
         });
-
     }
 
     private getReflectedClassesFromModule(tsModule : tsapi.Module, classes: tsapi.Class[]) {
