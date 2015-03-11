@@ -6,10 +6,7 @@ Once development has been complete this repository will become a sample project 
 
 
 ```typescript
-
-
 class ExampleAnnotation {
-
     constructor(private name: String = "") {
     }
 
@@ -17,13 +14,11 @@ class ExampleAnnotation {
         return this.name;
     }
 }
+```
 
-
-
+```typescript
 @MyAnnotation()
 class AnnotatedClass {
-
-
     @MyAnnotation("example")
     public annotatedFunction() {
 
@@ -32,10 +27,10 @@ class AnnotatedClass {
     public nonAnnotatedFunction() {
 
     }
-
 }
+```
 
-
+```typescript
 var instance = new AnnotatedClass();
 
 console.log(AnnotatedClass.getAnnotations())
